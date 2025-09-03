@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 from typing import List, Dict
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -20,7 +20,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["*"],  # Configure properly for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,6 +43,7 @@ class HealthResponse(BaseModel):
     version: str
     timestamp: datetime
     ai_enabled: bool = False
+    database_connected: bool = False
 
 # System prompt for retail expertise
 RETAIL_SYSTEM_PROMPT = """You are RetailBot, an expert AI consultant specializing in retail and FMCG (Fast-Moving Consumer Goods) industries. You have deep knowledge in:
@@ -58,13 +59,14 @@ RETAIL_SYSTEM_PROMPT = """You are RetailBot, an expert AI consultant specializin
 
 Provide specific, actionable advice based on industry best practices. Include relevant metrics, percentages, or benchmarks when possible. Keep responses professional, concise (2-3 paragraphs max), and focused on practical implementation."""
 
-# Mock storage
+# Mock storage for conversation history
 mock_chat_history = []
 
 def get_openai_client():
     """Get OpenAI client safely"""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
+        logger.warning("OpenAI API key not found")
         return None
     
     try:
@@ -82,13 +84,13 @@ async def generate_ai_response(user_message: str, user_id: str) -> tuple[str, fl
         return get_fallback_response(user_message), 0.75, False
     
     try:
-        # Get conversation history
+        # Get conversation history for context
         recent_history = get_conversation_history(user_id, limit=4)
         
-        # Build messages
+        # Build conversation context
         messages = [{"role": "system", "content": RETAIL_SYSTEM_PROMPT}]
         
-        # Add history
+        # Add conversation history
         for entry in recent_history:
             messages.append({"role": "user", "content": entry["message"]})
             messages.append({"role": "assistant", "content": entry["response"]})
@@ -96,12 +98,14 @@ async def generate_ai_response(user_message: str, user_id: str) -> tuple[str, fl
         # Add current message
         messages.append({"role": "user", "content": user_message})
         
-        # Call OpenAI
+        # Call OpenAI API
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=messages,
             max_tokens=400,
-            temperature=0.7
+            temperature=0.7,
+            presence_penalty=0.1,
+            frequency_penalty=0.1
         )
         
         ai_response = response.choices[0].message.content
@@ -115,7 +119,7 @@ async def generate_ai_response(user_message: str, user_id: str) -> tuple[str, fl
         return get_fallback_response(user_message), 0.7, False
 
 def calculate_confidence(response: str, user_message: str) -> float:
-    """Calculate confidence score"""
+    """Calculate confidence score for AI responses"""
     base_confidence = 0.85
     
     if len(response) > 200:
@@ -131,7 +135,7 @@ def calculate_confidence(response: str, user_message: str) -> float:
     return min(0.95, max(0.75, base_confidence))
 
 def get_fallback_response(message: str) -> str:
-    """Fallback responses when OpenAI unavailable"""
+    """Professional fallback responses when OpenAI unavailable"""
     message_lower = message.lower()
     
     responses = {
@@ -153,12 +157,12 @@ def get_fallback_response(message: str) -> str:
     return "I specialize in retail and FMCG optimization. I can help with inventory management, customer experience, sales strategies, supply chain, and analytics. What would you like to explore?"
 
 def get_conversation_history(user_id: str, limit: int = 4) -> List[Dict]:
-    """Get recent conversation history"""
+    """Get recent conversation history for context"""
     user_messages = [entry for entry in mock_chat_history if entry["user_id"] == user_id]
     return user_messages[-limit:] if user_messages else []
 
 def store_chat_message(user_id: str, message: str, response: str, confidence: float, ai_powered: bool):
-    """Store chat message"""
+    """Store chat message in memory"""
     chat_entry = {
         "user_id": user_id,
         "message": message,
@@ -169,30 +173,41 @@ def store_chat_message(user_id: str, message: str, response: str, confidence: fl
     }
     mock_chat_history.append(chat_entry)
     
-    # Keep last 100 messages
-    if len(mock_chat_history) > 100:
+    # Keep last 50 messages to prevent memory issues
+    if len(mock_chat_history) > 50:
         mock_chat_history.pop(0)
 
 # API Endpoints
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
+    """Health check endpoint for Kubernetes probes"""
     return HealthResponse(
         status="healthy",
         service="retailbot-api",
         version="1.0.0",
         timestamp=datetime.utcnow(),
-        ai_enabled=bool(os.getenv("OPENAI_API_KEY"))
+        ai_enabled=bool(os.getenv("OPENAI_API_KEY")),
+        database_connected=False  # Will be true when we add database
     )
+
+@app.get("/ready")
+async def readiness_check():
+    """Readiness probe for Kubernetes"""
+    return {"status": "ready", "timestamp": datetime.utcnow()}
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage):
-    """Chat endpoint with LLM integration"""
+    """Chat endpoint with OpenAI integration"""
     
     # Generate response
-    response_text, confidence, ai_powered = await generate_ai_response(message.message, message.user_id)
+    response_text, confidence, ai_powered = await generate_ai_response(
+        message.message, message.user_id
+    )
     
     # Store interaction
-    store_chat_message(message.user_id, message.message, response_text, confidence, ai_powered)
+    store_chat_message(
+        message.user_id, message.message, response_text, confidence, ai_powered
+    )
     
     logger.info(f"Chat response for user {message.user_id} (AI: {ai_powered})")
     
@@ -203,9 +218,26 @@ async def chat(message: ChatMessage):
         ai_powered=ai_powered
     )
 
+@app.get("/api/metrics")
+async def get_metrics():
+    """Metrics endpoint for monitoring"""
+    ai_responses = sum(1 for chat in mock_chat_history if chat.get("ai_powered", False))
+    
+    return {
+        "service": "retailbot-api",
+        "version": "1.0.0",
+        "total_chats": len(mock_chat_history),
+        "ai_powered_responses": ai_responses,
+        "ai_enabled": bool(os.getenv("OPENAI_API_KEY")),
+        "timestamp": datetime.utcnow()
+    }
+
 @app.get("/")
 async def root():
+    """Root endpoint"""
     return {
-        "message": "RetailBot API with LLM integration!",
-        "ai_enabled": bool(os.getenv("OPENAI_API_KEY"))
+        "message": "RetailBot API - Production Ready!",
+        "ai_enabled": bool(os.getenv("OPENAI_API_KEY")),
+        "version": "1.0.0",
+        "docs": "/docs"
     }
