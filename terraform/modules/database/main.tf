@@ -1,7 +1,16 @@
-# Generate random password for database
-resource "random_password" "postgresql_admin_password" {
-  length  = 16
-  special = true
+# terraform/modules/database/main.tf
+
+terraform {
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~>3.80"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~>3.1"
+    }
+  }
 }
 
 resource "random_string" "suffix" {
@@ -10,49 +19,77 @@ resource "random_string" "suffix" {
   upper   = false
 }
 
-# PostgreSQL Flexible Server - PRIVATE ACCESS ONLY
+resource "random_password" "admin_password" {
+  length  = 16
+  special = true
+  upper   = true
+  lower   = true
+  numeric = true
+}
+
+# PostgreSQL Flexible Server
 resource "azurerm_postgresql_flexible_server" "main" {
   name                = "psql-${var.project_name}-${var.environment}-${random_string.suffix.result}"
   resource_group_name = var.resource_group_name
   location            = var.location
-  version             = "14"
-  
-  # PRIVATE NETWORK CONFIGURATION - This automatically disables public access
-  delegated_subnet_id = var.database_subnet_id
+
+  # Cost-effective configuration for demo
+  sku_name   = "B_Standard_B1ms"  # Burstable, 1 vCore, 2GB RAM
+  storage_mb = 32768              # 32GB storage (minimum)
+  version    = "15"
+
+  # Network configuration for private access
+  delegated_subnet_id = var.delegated_subnet_id
   private_dns_zone_id = var.private_dns_zone_id
 
-   # Explicitly disable public network access
-  public_network_access_enabled = false
-  
   # Authentication
   administrator_login    = var.admin_username
-  administrator_password = random_password.postgresql_admin_password.result
-  
-  # Instance configuration
+  administrator_password = random_password.admin_password.result
 
-  storage_mb = var.storage_mb
-  sku_name   = var.sku_name
-  
   # Backup configuration
-  backup_retention_days        = var.backup_retention_days
-  geo_redundant_backup_enabled = false  # Keep it simple for demo
+  backup_retention_days        = 7
+  geo_redundant_backup_enabled = false
+
+  # High availability (disabled for cost savings)
+  high_availability {
+    mode = "Disabled"
+  }
+
+  # Maintenance window
+  maintenance_window {
+    day_of_week  = 0
+    start_hour   = 2
+    start_minute = 0
+  }
 
   tags = var.tags
+
+  depends_on = [var.private_dns_zone_id]
 }
 
-# Database
+# Database for the application
 resource "azurerm_postgresql_flexible_server_database" "retailbot" {
-  name      = "retailbot"
+  name      = var.database_name
   server_id = azurerm_postgresql_flexible_server.main.id
   collation = "en_US.utf8"
   charset   = "utf8"
 }
 
-# Store database credentials in Key Vault
-resource "azurerm_key_vault_secret" "db_connection_string" {
-  name         = "db-connection-string"
-  value        = "postgresql://${var.admin_username}:${urlencode(random_password.postgresql_admin_password.result)}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/retailbot?sslmode=require"
-  key_vault_id = var.key_vault_id
+# Database configuration for optimal performance
+resource "azurerm_postgresql_flexible_server_configuration" "log_statement" {
+  name      = "log_statement"
+  server_id = azurerm_postgresql_flexible_server.main.id
+  value     = "mod"  # Log all data modification statements
+}
 
-  depends_on = [azurerm_postgresql_flexible_server.main]
+resource "azurerm_postgresql_flexible_server_configuration" "log_min_duration_statement" {
+  name      = "log_min_duration_statement"
+  server_id = azurerm_postgresql_flexible_server.main.id
+  value     = "1000"  # Log queries taking longer than 1 second
+}
+
+resource "azurerm_postgresql_flexible_server_configuration" "shared_preload_libraries" {
+  name      = "shared_preload_libraries"
+  server_id = azurerm_postgresql_flexible_server.main.id
+  value     = "pg_stat_statements"  # Enable query statistics
 }

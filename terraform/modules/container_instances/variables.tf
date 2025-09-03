@@ -20,10 +20,10 @@ variable "resource_group_name" {
   type        = string
 }
 
-variable "openai_api_key" {
-  description = "OpenAI API key for AI functionality"
+# Key Vault integration variables
+variable "key_vault_id" {
+  description = "The ID of the Key Vault containing secrets"
   type        = string
-  sensitive   = true
 }
 
 variable "backend_cpu" {

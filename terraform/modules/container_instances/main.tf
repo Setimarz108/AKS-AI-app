@@ -13,6 +13,12 @@ terraform {
   }
 }
 
+# Get the OpenAI API key from Key Vault (expecting it to be added manually)
+data "azurerm_key_vault_secret" "openai_api_key" {
+  name         = "openai-api-key"  # Hardcoded expected secret name
+  key_vault_id = var.key_vault_id
+}
+
 # Random suffix for unique naming
 resource "random_string" "suffix" {
   length  = 4
@@ -59,8 +65,9 @@ resource "azurerm_container_group" "backend" {
       LOG_LEVEL   = var.log_level
     }
 
+    # Add this block that was missing
     secure_environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
+      OPENAI_API_KEY = data.azurerm_key_vault_secret.openai_api_key.value
     }
 
     liveness_probe {

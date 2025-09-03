@@ -1,14 +1,11 @@
-terraform {
-  required_version = ">= 1.0"
+# terraform/main.tf
 
+terraform {
+  required_version = ">= 1.5"
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
       version = "~>3.80"
-    }
-    random = {
-      source  = "hashicorp/random"
-      version = "~>3.4"
     }
   }
 }
@@ -16,67 +13,83 @@ terraform {
 provider "azurerm" {
   features {
     key_vault {
-      purge_soft_delete_on_destroy = true
+      purge_soft_delete_on_destroy = true  # For demo environments
     }
   }
 }
 
-# Local variables
 locals {
+  project_name = "retailbot"
+  environment  = "demo"
+  location     = "West Europe"
+  
   common_tags = {
-    Project     = var.project_name
-    Environment = var.environment
-    ManagedBy   = "Terraform"
-    Owner       = "DevOps Team"
+    Project      = local.project_name
+    Environment  = local.environment
+    ManagedBy    = "Terraform"
+    CostCenter   = "Demo"
+    Architecture = "ContainerInstances"
   }
 }
 
 # Resource Group
 resource "azurerm_resource_group" "main" {
-  name     = "rg-${var.project_name}-${var.environment}"
-  location = var.location
-
-  tags = local.common_tags
+  name     = "rg-${local.project_name}-${local.environment}"
+  location = local.location
+  tags     = local.common_tags
 }
 
-# Networking Module
+# Networking module
 module "networking" {
   source = "./modules/networking"
-
-  project_name        = var.project_name
-  environment         = var.environment
+  
+  project_name        = local.project_name
+  environment         = local.environment
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
-
+  
   tags = local.common_tags
 }
 
-# AKS Module
-module "aks" {
-  source = "./modules/aks"
-
-  project_name        = var.project_name
-  environment         = var.environment
+# Key Vault module for secure secret management
+module "keyvault" {
+  source = "./modules/keyvault"
+  
+  project_name        = local.project_name
+  environment         = local.environment
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
-  aks_subnet_id       = module.networking.aks_subnet_id
-
+  # openai_api_key      = var.openai_api_key
+  
+  # Additional application secrets if needed
+  additional_secrets = {
+    # "database-password" = var.database_password
+    # "jwt-secret" = var.jwt_secret
+  }
+  
   tags = local.common_tags
 }
 
-# Database Module
-module "database" {
-  source = "./modules/database"
-
-  project_name        = var.project_name
-  environment         = var.environment
+# Container Instances module
+module "container_instances" {
+  source = "./modules/container_instances"
+  
+  project_name        = local.project_name
+  environment         = local.environment
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
-  database_subnet_id  = module.networking.database_subnet_id
-  private_dns_zone_id = module.networking.private_dns_zone_id
-  key_vault_id        = module.aks.key_vault_id
-
+  
+  # Reference Key Vault for secrets
+  key_vault_id = module.keyvault.key_vault_id
+  
+  # Resource allocation
+  backend_cpu     = "0.5"
+  backend_memory  = "1.0"
+  frontend_cpu    = "0.5"
+  frontend_memory = "1.0"
+  log_level       = "INFO"
+  
   tags = local.common_tags
-
-  depends_on = [module.aks]
+  
+  depends_on = [module.keyvault]
 }

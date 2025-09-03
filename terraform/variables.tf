@@ -20,3 +20,14 @@ variable "location" {
   type        = string
   default     = "West Europe"
 }
+
+# variable "openai_api_key" {
+#   description = "OpenAI API key for AI functionality"
+#   type        = string
+#   sensitive   = true
+  
+#   validation {
+#     condition     = can(regex("^sk-", var.openai_api_key))
+#     error_message = "OpenAI API key must start with 'sk-'."
+#   }
+# }
