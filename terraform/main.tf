@@ -59,16 +59,28 @@ module "keyvault" {
   environment         = local.environment
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
-  # openai_api_key      = var.openai_api_key
-  
-  # Additional application secrets if needed
-  additional_secrets = {
-    # "database-password" = var.database_password
-    # "jwt-secret" = var.jwt_secret
-  }
   
   tags = local.common_tags
 }
+
+# Database module for persistent data storage
+# module "database" {
+#   source = "./modules/database"
+  
+#   project_name        = local.project_name
+#   environment         = local.environment
+#   location            = azurerm_resource_group.main.location
+#   resource_group_name = azurerm_resource_group.main.name
+  
+#   delegated_subnet_id = module.networking.database_subnet_id
+#   private_dns_zone_id = module.networking.private_dns_zone_id
+  
+#   admin_username         = "retailbotadmin"
+#   database_name         = "retailbot"
+#   backup_retention_days = 7
+  
+#   tags = local.common_tags
+# }
 
 # Container Instances module
 module "container_instances" {
@@ -81,6 +93,9 @@ module "container_instances" {
   
   # Reference Key Vault for secrets
   key_vault_id = module.keyvault.key_vault_id
+
+  frontend_image_tag = var.frontend_image_tag
+  backend_image_tag  = var.backend_image_tag
   
   # Resource allocation
   backend_cpu     = "0.5"

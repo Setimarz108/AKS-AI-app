@@ -1,4 +1,4 @@
-# terraform/modules/container_instances/main.tf
+# terraform/modules/container_instances/main.tf - Unified Container Group
 
 terraform {
   required_providers {
@@ -13,9 +13,9 @@ terraform {
   }
 }
 
-# Get the OpenAI API key from Key Vault (expecting it to be added manually)
+# Get the OpenAI API key from Key Vault
 data "azurerm_key_vault_secret" "openai_api_key" {
-  name         = "openai-api-key"  # Hardcoded expected secret name
+  name         = "openai-api-key"
   key_vault_id = var.key_vault_id
 }
 
@@ -37,21 +37,22 @@ resource "azurerm_container_registry" "main" {
   tags = var.tags
 }
 
-# Container Instance for Backend API
-resource "azurerm_container_group" "backend" {
-  name                = "ci-${var.project_name}-api-${var.environment}"
+# Unified Container Group with both frontend and backend
+resource "azurerm_container_group" "app" {
+  name                = "ci-${var.project_name}-app-${var.environment}"
   location            = var.location
   resource_group_name = var.resource_group_name
   ip_address_type     = "Public"
-  dns_name_label      = "${var.project_name}-api-${random_string.suffix.result}"
+  dns_name_label      = "${var.project_name}-app-${random_string.suffix.result}"
   os_type             = "Linux"
   restart_policy      = "Always"
   
   tags = var.tags
 
+  # Backend Container
   container {
-    name   = "retailbot-api"
-    image  = "${azurerm_container_registry.main.login_server}/retailbot-api:latest"
+    name   = "backend"
+    image  = "${azurerm_container_registry.main.login_server}/retailbot-api:${var.backend_image_tag}"
     cpu    = var.backend_cpu
     memory = var.backend_memory
 
@@ -65,7 +66,6 @@ resource "azurerm_container_group" "backend" {
       LOG_LEVEL   = var.log_level
     }
 
-    # Add this block that was missing
     secure_environment_variables = {
       OPENAI_API_KEY = data.azurerm_key_vault_secret.openai_api_key.value
     }
@@ -95,28 +95,10 @@ resource "azurerm_container_group" "backend" {
     }
   }
 
-  image_registry_credential {
-    server   = azurerm_container_registry.main.login_server
-    username = azurerm_container_registry.main.admin_username
-    password = azurerm_container_registry.main.admin_password
-  }
-}
-
-# Container Instance for Frontend
-resource "azurerm_container_group" "frontend" {
-  name                = "ci-${var.project_name}-web-${var.environment}"
-  location            = var.location
-  resource_group_name = var.resource_group_name
-  ip_address_type     = "Public"
-  dns_name_label      = "${var.project_name}-web-${random_string.suffix.result}"
-  os_type             = "Linux"
-  restart_policy      = "Always"
-  
-  tags = var.tags
-
+  # Frontend Container
   container {
-    name   = "retailbot-frontend"
-    image  = "${azurerm_container_registry.main.login_server}/retailbot-frontend:latest"
+    name   = "frontend"
+    image  = "${azurerm_container_registry.main.login_server}/retailbot-frontend:${var.frontend_image_tag}"
     cpu    = var.frontend_cpu
     memory = var.frontend_memory
 
@@ -126,13 +108,12 @@ resource "azurerm_container_group" "frontend" {
     }
 
     environment_variables = {
-      REACT_APP_API_URL = "https://${azurerm_container_group.backend.fqdn}:8000"
-      ENVIRONMENT       = var.environment
+      ENVIRONMENT = var.environment
     }
 
     liveness_probe {
       http_get {
-        path   = "/health"
+        path   = "/"
         port   = 80
         scheme = "Http"
       }
@@ -144,7 +125,7 @@ resource "azurerm_container_group" "frontend" {
 
     readiness_probe {
       http_get {
-        path   = "/health"
+        path   = "/"
         port   = 80
         scheme = "Http"
       }
@@ -160,6 +141,4 @@ resource "azurerm_container_group" "frontend" {
     username = azurerm_container_registry.main.admin_username
     password = azurerm_container_registry.main.admin_password
   }
-
-  depends_on = [azurerm_container_group.backend]
 }

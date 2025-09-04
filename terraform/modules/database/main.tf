@@ -42,6 +42,7 @@ resource "azurerm_postgresql_flexible_server" "main" {
   delegated_subnet_id = var.delegated_subnet_id
   private_dns_zone_id = var.private_dns_zone_id
 
+  public_network_access_enabled = false
   # Authentication
   administrator_login    = var.admin_username
   administrator_password = random_password.admin_password.result
@@ -50,11 +51,7 @@ resource "azurerm_postgresql_flexible_server" "main" {
   backup_retention_days        = 7
   geo_redundant_backup_enabled = false
 
-  # High availability (disabled for cost savings)
-  high_availability {
-    mode = "Disabled"
-  }
-
+  
   # Maintenance window
   maintenance_window {
     day_of_week  = 0

@@ -61,3 +61,13 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "frontend_image_tag" {
+  description = "Frontend image tag to deploy (e.g., v1.0.0)"
+  type        = string
+}
+
+variable "backend_image_tag" {
+  description = "Backend image tag to deploy (e.g., v1.0.0)"
+  type        = string
+}

@@ -35,6 +35,7 @@ function App() {
 
   const checkApiHealth = async () => {
     try {
+      // nginx proxies /health to backend:8000/health
       const response = await axios.get('/health');
       setApiStatus({
         status: 'connected',
@@ -62,6 +63,7 @@ function App() {
     setIsLoading(true);
 
     try {
+      // nginx proxies /api/chat to backend:8000/api/chat
       const response = await axios.post('/api/chat', {
         message: inputMessage,
         user_id: `user_${Date.now()}`
@@ -186,7 +188,7 @@ function App() {
       </div>
 
       <footer className="app-footer">
-        <p>Demo environment - Built with React + FastAPI + PostgreSQL on Azure AKS</p>
+        <p>Demo environment - Built with React + FastAPI + Azure Container Instances</p>
       </footer>
     </div>
   );

@@ -22,32 +22,22 @@ output "container_registry_admin_password" {
   sensitive   = true
 }
 
-output "backend_fqdn" {
-  description = "The FQDN of the backend container"
-  value       = azurerm_container_group.backend.fqdn
+output "app_fqdn" {
+  description = "The FQDN of the unified application container group"
+  value       = azurerm_container_group.app.fqdn
 }
 
-output "frontend_fqdn" {
-  description = "The FQDN of the frontend container"
-  value       = azurerm_container_group.frontend.fqdn
-}
-
-output "backend_ip_address" {
-  description = "The public IP address of the backend container"
-  value       = azurerm_container_group.backend.ip_address
-}
-
-output "frontend_ip_address" {
-  description = "The public IP address of the frontend container"
-  value       = azurerm_container_group.frontend.ip_address
-}
-
-output "backend_url" {
-  description = "The complete URL of the backend API"
-  value       = "https://${azurerm_container_group.backend.fqdn}:8000"
+output "app_ip_address" {
+  description = "The public IP address of the application"
+  value       = azurerm_container_group.app.ip_address
 }
 
 output "frontend_url" {
-  description = "The complete URL of the frontend application"
-  value       = "http://${azurerm_container_group.frontend.fqdn}"
+  description = "The URL to access the frontend application"
+  value       = "http://${azurerm_container_group.app.fqdn}"
+}
+
+output "backend_url" {
+  description = "The URL to access the backend API"
+  value       = "http://${azurerm_container_group.app.fqdn}:8000"
 }

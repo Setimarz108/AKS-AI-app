@@ -31,3 +31,15 @@ variable "location" {
 #     error_message = "OpenAI API key must start with 'sk-'."
 #   }
 # }
+
+variable "frontend_image_tag" {
+  description = "Frontend image tag to deploy"
+  type        = string
+  
+}
+
+variable "backend_image_tag" {
+  description = "Backend image tag to deploy"
+  type        = string
+ 
+}
