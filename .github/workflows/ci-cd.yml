@@ -39,7 +39,7 @@ jobs:
     
     - name: Test Frontend
       run: |
-        cd frontend
+        cd app/frontend
         npm ci
         npm run build
 
