@@ -85,7 +85,7 @@ jobs:
     
     - name: Build and push frontend image
       run: |
-        docker build -t ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.meta.outputs.tag }} frontend/
+        docker build -t ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.meta.outputs.tag }} app/frontend/
         docker tag ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.meta.outputs.tag }} ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:latest
         docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.meta.outputs.tag }}
         docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:latest
