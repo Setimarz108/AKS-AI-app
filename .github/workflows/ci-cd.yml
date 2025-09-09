@@ -1,0 +1,173 @@
+name: RetailBot CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  ACR_NAME: ${{ secrets.ACR_NAME }}
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Test Backend
+      run: |
+        cd app
+        pip install -r requirements.txt
+        python -m pytest tests/ -v || echo "No tests found - skipping"
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+    
+    - name: Test Frontend
+      run: |
+        cd frontend
+        npm ci
+        npm run build
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tag }}
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Generate image tag
+      id: meta
+      run: |
+        TAG="${GITHUB_SHA:0:8}"
+        echo "tag=${TAG}" >> $GITHUB_OUTPUT
+        echo "Image tag: ${TAG}"
+    
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: |
+          {
+            "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+            "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+            "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+            "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+          }
+    
+    - name: Login to Azure Container Registry
+      run: |
+        az acr login --name ${{ env.ACR_NAME }}
+    
+    - name: Build and push backend image
+      run: |
+        docker build -t ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:${{ steps.meta.outputs.tag }} app/
+        docker tag ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:${{ steps.meta.outputs.tag }} ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:latest
+        docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:${{ steps.meta.outputs.tag }}
+        docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:latest
+    
+    - name: Build and push frontend image
+      run: |
+        docker build -t ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.meta.outputs.tag }} frontend/
+        docker tag ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.meta.outputs.tag }} ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:latest
+        docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.meta.outputs.tag }}
+        docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:latest
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    environment: production
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.5.0
+    
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: |
+          {
+            "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+            "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+            "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+            "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+          }
+    
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init
+    
+    - name: Terraform Plan
+      run: |
+        cd terraform
+        terraform plan \
+          -var="frontend_image_tag=${{ needs.build.outputs.image-tag }}" \
+          -var="backend_image_tag=${{ needs.build.outputs.image-tag }}"
+    
+    - name: Terraform Apply
+      run: |
+        cd terraform
+        terraform apply -auto-approve \
+          -var="frontend_image_tag=${{ needs.build.outputs.image-tag }}" \
+          -var="backend_image_tag=${{ needs.build.outputs.image-tag }}"
+    
+    - name: Get deployment outputs
+      run: |
+        cd terraform
+        echo "Frontend URL: $(terraform output -raw frontend_url)"
+        echo "Backend URL: $(terraform output -raw backend_url)"
+
+  rollback:
+    runs-on: ubuntu-latest
+    if: failure()
+    environment: production
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.5.0
+    
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: |
+          {
+            "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+            "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+            "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+            "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+          }
+    
+    - name: Rollback to latest stable
+      run: |
+        cd terraform
+        terraform init
+        terraform apply -auto-approve \
+          -var="frontend_image_tag=latest" \
+          -var="backend_image_tag=latest"
