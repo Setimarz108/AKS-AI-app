@@ -39,7 +39,7 @@ jobs:
     
     - name: Test Frontend
       run: |
-        cd app/frontend
+        cd frontend
         npm ci
         npm run build
 
@@ -118,11 +118,13 @@ jobs:
     - name: Terraform Init
       run: |
         cd terraform
+        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
         terraform init
     
     - name: Terraform Plan
       run: |
         cd terraform
+        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
         terraform plan \
           -var="frontend_image_tag=${{ needs.build.outputs.image-tag }}" \
           -var="backend_image_tag=${{ needs.build.outputs.image-tag }}"
@@ -130,6 +132,7 @@ jobs:
     - name: Terraform Apply
       run: |
         cd terraform
+        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
         terraform apply -auto-approve \
           -var="frontend_image_tag=${{ needs.build.outputs.image-tag }}" \
           -var="backend_image_tag=${{ needs.build.outputs.image-tag }}"

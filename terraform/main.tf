@@ -2,11 +2,19 @@
 
 terraform {
   required_version = ">= 1.5"
+    backend "azurerm" {
+    storage_account_name = "tfstate4690"  
+    container_name       = "tfstate"
+    key                  = "retailbot.tfstate"
+  }
+
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
       version = "~>3.80"
     }
+
+    
   }
 }
 
