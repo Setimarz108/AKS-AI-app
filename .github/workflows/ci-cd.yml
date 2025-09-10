@@ -115,6 +115,7 @@ jobs:
       uses: github/codeql-action/upload-sarif@v2
       with:
         sarif_file: 'trivy-results.sarif'
+        category: 'trivy-source-code'
 
   build:
     needs: [changes, security-scan, test-backend, test-frontend]
