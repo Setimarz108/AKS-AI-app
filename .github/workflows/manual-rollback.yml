@@ -1,0 +1,53 @@
+name: Manual Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_version:
+        description: 'Image tag to rollback to (e.g., stable, latest, or specific commit SHA)'
+        required: true
+        default: 'stable'
+        type: choice
+        options:
+          - stable
+          - latest
+      rollback_reason:
+        description: 'Reason for rollback'
+        required: true
+        type: string
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: production-rollback
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.6.0
+    
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: |
+          {
+            "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+            "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+            "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+            "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+          }
+    
+    - name: Manual rollback
+      run: |
+        cd ./terraform
+        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
+        echo "Rolling back to: ${{ github.event.inputs.target_version }}"
+        echo "Reason: ${{ github.event.inputs.rollback_reason }}"
+        terraform init
+        terraform apply -auto-approve \
+          -target=module.container_instances.azurerm_container_group.app \
+          -var="frontend_image_tag=${{ github.event.inputs.target_version }}" \
+          -var="backend_image_tag=${{ github.event.inputs.target_version }}"
