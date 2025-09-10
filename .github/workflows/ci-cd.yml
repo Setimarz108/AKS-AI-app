@@ -225,23 +225,23 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
       with:
-        terraform_version: latest
+        terraform_version: 1.5.0
     
-    - name: Login to Azure using OIDC
+    - name: Login to Azure
       uses: azure/login@v1
       with:
-        client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-    - name: Configure Terraform for Azure Storage
-      run: |
-        echo "ARM_USE_OIDC=true" >> $GITHUB_ENV
-        echo "ARM_STORAGE_USE_AZUREAD=true" >> $GITHUB_ENV
+        creds: |
+          {
+            "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+            "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+            "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+            "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+          }
 
     - name: Terraform Init
       run: |
         cd ${{ env.TF_WORKING_DIR }}
+        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
         terraform init
     
     - name: Terraform Plan
