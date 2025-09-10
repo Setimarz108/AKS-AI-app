@@ -117,7 +117,7 @@ jobs:
         sarif_file: 'trivy-results.sarif'
 
   build:
-    needs: [changes, security-scan]
+    needs: [changes, security-scan, test-backend, test-frontend]
     runs-on: ubuntu-latest
     if: |
       always() && 
@@ -138,12 +138,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       
-      - name: Login to Azure using OIDC
+      - name: Login to Azure
         uses: azure/login@v1
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          creds: |
+            {
+              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+            }
 
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ env.ACR_NAME }}
@@ -225,7 +229,7 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
       with:
-        terraform_version: 1.5.0
+        terraform_version: 1.6.0
     
     - name: Login to Azure
       uses: azure/login@v1
@@ -247,6 +251,7 @@ jobs:
     - name: Terraform Plan
       run: |
         cd ${{ env.TF_WORKING_DIR }}
+        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
         terraform plan \
           -target=module.container_instances.azurerm_container_group.app \
           -var="frontend_image_tag=${{ needs.build.outputs.image-tag }}" \
@@ -255,6 +260,7 @@ jobs:
     - name: Terraform Apply
       run: |
         cd ${{ env.TF_WORKING_DIR }}
+        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
         terraform apply -auto-approve \
           -target=module.container_instances.azurerm_container_group.app \
           -var="frontend_image_tag=${{ needs.build.outputs.image-tag }}" \
@@ -266,6 +272,7 @@ jobs:
     - name: Verify deployment health
       run: |
         cd ${{ env.TF_WORKING_DIR }}
+        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
         FRONTEND_URL=$(terraform output -raw frontend_url)
         BACKEND_URL=$(terraform output -raw backend_url)
         
@@ -280,6 +287,7 @@ jobs:
     - name: Get deployment outputs
       run: |
         cd ${{ env.TF_WORKING_DIR }}
+        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
         echo "Frontend URL: $(terraform output -raw frontend_url)"
         echo "Backend URL: $(terraform output -raw backend_url)"
 
@@ -295,23 +303,23 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
       with:
-        terraform_version: 1.5.0
+        terraform_version: 1.6.0
     
-    - name: Login to Azure using OIDC
+    - name: Login to Azure
       uses: azure/login@v1
       with:
-        client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-    
-    - name: Configure Terraform for Azure Storage
-      run: |
-        echo "ARM_USE_OIDC=true" >> $GITHUB_ENV
-        echo "ARM_STORAGE_USE_AZUREAD=true" >> $GITHUB_ENV
+        creds: |
+          {
+            "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+            "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+            "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+            "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+          }
     
     - name: Automatic rollback to stable version
       run: |
         cd ${{ env.TF_WORKING_DIR }}
+        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
         terraform init
         terraform apply -auto-approve \
           -target=module.container_instances.azurerm_container_group.app \
@@ -329,23 +337,23 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
       with:
-        terraform_version: 1.5.0
+        terraform_version: 1.6.0
     
-    - name: Login to Azure using OIDC
+    - name: Login to Azure
       uses: azure/login@v1
       with:
-        client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-    
-    - name: Configure Terraform for Azure Storage
-      run: |
-        echo "ARM_USE_OIDC=true" >> $GITHUB_ENV
-        echo "ARM_STORAGE_USE_AZUREAD=true" >> $GITHUB_ENV
+        creds: |
+          {
+            "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+            "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+            "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+            "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+          }
     
     - name: Manual rollback to stable version
       run: |
         cd ${{ env.TF_WORKING_DIR }}
+        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
         terraform init
         terraform apply -auto-approve \
           -target=module.container_instances.azurerm_container_group.app \
