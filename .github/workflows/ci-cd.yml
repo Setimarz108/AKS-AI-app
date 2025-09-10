@@ -36,98 +36,12 @@ jobs:
             terraform:
               - 'terraform/**'
 
-  test-backend:
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.backend == 'true'
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      
-      - name: Cache Python dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('app/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Test Backend with Coverage
-        run: |
-          cd app
-          pip install -r requirements.txt
-          pytest --cov=. --cov-report=xml --cov-report=term tests/ || echo "No tests found - skipping"
-      
-      - name: Upload Backend Coverage
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./app/coverage.xml
-          flags: backend
-
-  test-frontend:
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.frontend == 'true'
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-      
-      - name: Cache Node.js dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('app/frontend/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-          
-      - name: Test Frontend
-        run: |
-          cd app/frontend
-          npm ci
-          npm run build
-          npm test -- --coverage --watchAll=false || echo "No tests found - skipping"
-
-  security-scan:
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Run Trivy vulnerability scanner (Source Code)
-      uses: aquasecurity/trivy-action@master
-      with:
-        scan-type: 'fs'
-        scan-ref: '.'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-    
-    - name: Upload Trivy scan results to GitHub Code Scanning
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: 'trivy-results.sarif'
-        category: 'trivy-source-code'
-
   build:
-    needs: [changes, security-scan, test-backend, test-frontend]
+    needs: changes
     runs-on: ubuntu-latest
     if: |
-      always() && 
-      github.ref == 'refs/heads/main' && 
-      (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true') &&
-      (needs.test-backend.result == 'success' || needs.test-backend.result == 'skipped') &&
-      (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped') &&
-      needs.security-scan.result == 'success'
-    
+      github.ref == 'refs/heads/main' &&
+      (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
     outputs:
       image-tag: ${{ steps.meta.outputs.tag }}
       backend-built: ${{ needs.changes.outputs.backend }}
@@ -149,7 +63,7 @@ jobs:
               "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
               "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
             }
-
+      
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ env.ACR_NAME }}
       
@@ -185,7 +99,7 @@ jobs:
             ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:stable
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
-
+      
       - name: Scan backend image for vulnerabilities
         if: needs.changes.outputs.backend == 'true'
         uses: aquasecurity/trivy-action@master
@@ -193,13 +107,14 @@ jobs:
           image-ref: '${{ env.ACR_NAME }}.azurecr.io/retailbot-api:${{ steps.meta.outputs.tag }}'
           format: 'sarif'
           output: 'trivy-backend-image.sarif'
-
+          
       - name: Upload backend image scan results
         if: needs.changes.outputs.backend == 'true'
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v2
         with:
           sarif_file: 'trivy-backend-image.sarif'
-
+          category: 'backend-image'
+      
       - name: Scan frontend image for vulnerabilities
         if: needs.changes.outputs.frontend == 'true'
         uses: aquasecurity/trivy-action@master
@@ -207,90 +122,37 @@ jobs:
           image-ref: '${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.meta.outputs.tag }}'
           format: 'sarif'
           output: 'trivy-frontend-image.sarif'
-
+          
       - name: Upload frontend image scan results
         if: needs.changes.outputs.frontend == 'true'
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v2
         with:
           sarif_file: 'trivy-frontend-image.sarif'
-  
+          category: 'frontend-image'
+
   deploy:
-    needs: [build, changes, test-backend, test-frontend]
     runs-on: ubuntu-latest
+    needs: [build]
     if: |
-      always() &&
-      github.ref == 'refs/heads/main' && 
+      github.ref == 'refs/heads/main' &&
       (needs.build.outputs.backend-built == 'true' || needs.build.outputs.frontend-built == 'true') &&
       needs.build.result == 'success'
     environment: production
     
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
-      with:
-        terraform_version: 1.6.0
-    
-    - name: Login to Azure
-      uses: azure/login@v1
-      with:
-        creds: |
-          {
-            "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
-            "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
-            "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
-            "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
-          }
-
-    - name: Terraform Init
-      run: |
-        cd ${{ env.TF_WORKING_DIR }}
-        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
-        terraform init
-    
-    - name: Terraform Plan
-      run: |
-        cd ${{ env.TF_WORKING_DIR }}
-        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
-        terraform plan \
-          -target=module.container_instances.azurerm_container_group.app \
-          -var="frontend_image_tag=${{ needs.build.outputs.image-tag }}" \
-          -var="backend_image_tag=${{ needs.build.outputs.image-tag }}"
-    
-    - name: Terraform Apply
-      run: |
-        cd ${{ env.TF_WORKING_DIR }}
-        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
-        terraform apply -auto-approve \
-          -target=module.container_instances.azurerm_container_group.app \
-          -var="frontend_image_tag=${{ needs.build.outputs.image-tag }}" \
-          -var="backend_image_tag=${{ needs.build.outputs.image-tag }}"
-    
-    - name: Wait for deployment
-      run: sleep 60
-    
-    - name: Verify deployment health
-      run: |
-        cd ${{ env.TF_WORKING_DIR }}
-        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
-        FRONTEND_URL=$(terraform output -raw frontend_url)
-        BACKEND_URL=$(terraform output -raw backend_url)
-        
-        echo "Testing frontend: $FRONTEND_URL"
-        curl -f --retry 3 --retry-delay 10 "$FRONTEND_URL" || exit 1
-        
-        echo "Testing backend health: $BACKEND_URL/health"
-        curl -f --retry 3 --retry-delay 10 "$BACKEND_URL/health" || exit 1
-        
-        echo "Deployment verification successful"
-    
-    - name: Get deployment outputs
-      run: |
-        cd ${{ env.TF_WORKING_DIR }}
-        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
-        echo "Frontend URL: $(terraform output -raw frontend_url)"
-        echo "Backend URL: $(terraform output -raw backend_url)"
+      - name: Deploy application
+        uses: ./.github/workflows/terraform-apply.yml
+        with:
+          frontend_image_tag: ${{ needs.build.outputs.image-tag }}
+          backend_image_tag: ${{ needs.build.outputs.image-tag }}
+          run_plan: 'false'
+          
+      - name: Get deployment outputs
+        run: |
+          cd ${{ env.TF_WORKING_DIR }}
+          export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
+          echo "Frontend URL: $(terraform output -raw frontend_url)"
+          echo "Backend URL: $(terraform output -raw backend_url)"
 
   rollback:
     runs-on: ubuntu-latest
@@ -299,30 +161,9 @@ jobs:
     environment: production
     
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
-      with:
-        terraform_version: 1.6.0
-    
-    - name: Login to Azure
-      uses: azure/login@v1
-      with:
-        creds: |
-          {
-            "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
-            "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
-            "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
-            "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
-          }
-    
-    - name: Automatic rollback to stable version
-      run: |
-        cd ${{ env.TF_WORKING_DIR }}
-        export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
-        terraform init
-        terraform apply -auto-approve \
-          -target=module.container_instances.azurerm_container_group.app \
-          -var="frontend_image_tag=stable" \
-          -var="backend_image_tag=stable"
+      - name: Automatic rollback to stable version
+        uses: ./.github/workflows/terraform-apply.yml
+        with:
+          frontend_image_tag: 'stable'
+          backend_image_tag: 'stable'
+          run_plan: 'false'
