@@ -42,18 +42,57 @@ jobs:
       - name: Build and push backend image
         run: |
           cd app
-          docker build -t ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:${{ steps.tag.outputs.image_tag }} .
-          docker tag ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:${{ steps.tag.outputs.image_tag }} ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:latest
-          docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:${{ steps.tag.outputs.image_tag }}
-          docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:latest
+          echo "Building backend image with tag: ${{ steps.tag.outputs.image_tag }}"
+          docker build -t ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:${{ steps.tag.outputs.image_tag }} . || exit 1
+          docker tag ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:${{ steps.tag.outputs.image_tag }} ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:latest || exit 1
+          
+          echo "Pushing backend images..."
+          docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:${{ steps.tag.outputs.image_tag }} || exit 1
+          docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:latest || exit 1
+          
+          echo "Verifying backend images were pushed..."
+          az acr repository show-tags --name ${{ env.ACR_NAME }} --repository retailbot-api --output table
       
       - name: Build and push frontend image
         run: |
           cd app/frontend
-          docker build -t ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.tag.outputs.image_tag }} .
-          docker tag ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.tag.outputs.image_tag }} ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:latest
-          docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.tag.outputs.image_tag }}
-          docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:latest
+          echo "Building frontend image with tag: ${{ steps.tag.outputs.image_tag }}"
+          echo "Current directory: $(pwd)"
+          echo "Directory contents:"
+          ls -la
+          
+          # Build with verbose output
+          docker build --progress=plain -t ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.tag.outputs.image_tag }} . || {
+            echo "Frontend build failed!"
+            exit 1
+          }
+          
+          docker tag ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.tag.outputs.image_tag }} ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:latest || {
+            echo "Frontend tagging failed!"
+            exit 1
+          }
+          
+          echo "Frontend images created locally:"
+          docker images | grep retailbot-frontend
+          
+          echo "Re-authenticating to ACR..."
+          az acr login --name ${{ env.ACR_NAME }} || {
+            echo "ACR login failed!"
+            exit 1
+          }
+          
+          echo "Pushing frontend images..."
+          docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.tag.outputs.image_tag }} || {
+            echo "Frontend SHA push failed!"
+            exit 1
+          }
+          docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:latest || {
+            echo "Frontend latest push failed!"
+            exit 1
+          }
+          
+          echo "Verifying frontend images were pushed..."
+          az acr repository show-tags --name ${{ env.ACR_NAME }} --repository retailbot-frontend --output table
       
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
