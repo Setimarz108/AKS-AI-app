@@ -1,11 +1,12 @@
 # terraform/main.tf
 
 terraform {
-  required_version = ">= 1.5"
+  required_version = "latest"
     backend "azurerm" {
     storage_account_name = "tfstate4690"  
     container_name       = "tfstate"
     key                  = "retailbot.tfstate"
+    use_azuread_auth    = true 
   }
 
   required_providers {
