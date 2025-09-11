@@ -428,3 +428,4 @@ if __name__ == "__main__":
 # Simple pipeline test
 # Simple pipeline test
 # Test unified tagging
+# Test fixed Docker push
