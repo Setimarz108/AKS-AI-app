@@ -12,17 +12,13 @@ env:
   ACR_NAME: ${{ secrets.ACR_NAME }}
 
 jobs:
-  build-and-deploy:
+  build-images:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    
+    outputs:
+      image_tag: ${{ steps.tag.outputs.image_tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      - name: Generate image tag
-        id: tag
-        run: echo "image_tag=${GITHUB_SHA:0:8}" >> $GITHUB_OUTPUT
       
       - name: Login to Azure
         uses: azure/login@v1
@@ -34,6 +30,10 @@ jobs:
               "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
               "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
             }
+      
+      - name: Generate and save image tag
+        id: tag
+        run: echo "image_tag=$(echo ${{ github.sha }} | cut -c1-8)" >> $GITHUB_OUTPUT
       
       - name: Build and push backend using ACR
         run: |
@@ -51,61 +51,37 @@ jobs:
             --image retailbot-frontend:latest \
             ./app/frontend
       
-      - name: Verify images exist
+      - name: Wait for registry sync
         run: |
           echo "Waiting for registry indexing..."
-          sleep 60 
-          
+          sleep 60
+      
+      - name: Verify images exist
+        run: |
           echo "Verifying images were created..."
           az acr repository show-tags --name ${{ env.ACR_NAME }} --repository retailbot-api --output table
           az acr repository show-tags --name ${{ env.ACR_NAME }} --repository retailbot-frontend --output table
           
-          # Verify specific tags exist
-          if ! az acr repository show-tags --name ${{ env.ACR_NAME }} --repository retailbot-api --query "contains(@, '${{ steps.tag.outputs.image_tag }}')" -o tsv | grep -q true; then
-            echo "ERROR: Backend image not found"
+          # Check specific tags exist
+          BACKEND_EXISTS=$(az acr repository show-tags --name ${{ env.ACR_NAME }} --repository retailbot-api --query "contains(@, '${{ steps.tag.outputs.image_tag }}')" -o tsv)
+          FRONTEND_EXISTS=$(az acr repository show-tags --name ${{ env.ACR_NAME }} --repository retailbot-frontend --query "contains(@, '${{ steps.tag.outputs.image_tag }}')" -o tsv)
+          
+          if [ "$BACKEND_EXISTS" != "true" ]; then
+            echo "ERROR: Backend image with tag ${{ steps.tag.outputs.image_tag }} not found"
             exit 1
           fi
           
-          if ! az acr repository show-tags --name ${{ env.ACR_NAME }} --repository retailbot-frontend --query "contains(@, '${{ steps.tag.outputs.image_tag }}')" -o tsv | grep -q true; then
-            echo "ERROR: Frontend image not found"
+          if [ "$FRONTEND_EXISTS" != "true" ]; then
+            echo "ERROR: Frontend image with tag ${{ steps.tag.outputs.image_tag }} not found"
             exit 1
           fi
           
-          echo "SUCCESS: All images verified"
-      
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: 1.6.0
-      
-      - name: Deploy with Terraform
-        run: |
-          cd terraform
-          export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
-          terraform init
-          terraform apply -auto-approve \
-            -target=module.container_instances.azurerm_container_group.app \
-            -var="frontend_image_tag=${{ steps.tag.outputs.image_tag }}" \
-            -var="backend_image_tag=${{ steps.tag.outputs.image_tag }}"
-      
-      - name: Verify deployment
-        run: |
-          echo "Waiting for containers to start..."
-          sleep 45
-          cd terraform
-          export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
-          FRONTEND_URL=$(terraform output -raw frontend_url)
-          echo "Testing frontend: $FRONTEND_URL"
-          curl -f "$FRONTEND_URL" || echo "Frontend check failed but continuing..."
-          echo "Testing backend health: $FRONTEND_URL:8000/health"
-          curl -f "$FRONTEND_URL:8000/health" || echo "Backend check failed but continuing..."
-          echo "Deployment completed"
+          echo "SUCCESS: All images verified in registry"
 
-  rollback:
+  deploy-infrastructure:
     runs-on: ubuntu-latest
-    if: failure() && github.ref == 'refs/heads/main'
-    needs: [build-and-deploy]
-    
+    needs: build-images
+    environment: production
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -126,12 +102,61 @@ jobs:
         with:
           terraform_version: 1.6.0
       
-      - name: Rollback to latest stable
+      - name: Deploy with Terraform using latest tags
+        env:
+          ARM_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
         run: |
           cd terraform
-          export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
           terraform init
-          echo "Rolling back to latest stable version"
+          terraform apply -auto-approve \
+            -target=module.container_instances.azurerm_container_group.app \
+            -var="frontend_image_tag=latest" \
+            -var="backend_image_tag=latest"
+      
+      - name: Verify deployment
+        run: |
+          echo "Waiting for containers to start..."
+          sleep 60
+          cd terraform
+          export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
+          FRONTEND_URL=$(terraform output -raw frontend_url)
+          echo "Testing frontend: $FRONTEND_URL"
+          curl -f "$FRONTEND_URL" || echo "Frontend check failed but continuing..."
+          echo "Testing backend health: $FRONTEND_URL:8000/health"
+          curl -f "$FRONTEND_URL:8000/health" || echo "Backend check failed but continuing..."
+          echo "Deployment completed successfully"
+
+  rollback:
+    runs-on: ubuntu-latest
+    if: failure()
+    needs: [build-images, deploy-infrastructure]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: |
+            {
+              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+            }
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.6.0
+      
+      - name: Rollback to previous stable version
+        env:
+          ARM_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+        run: |
+          cd terraform
+          terraform init
+          echo "Rolling back to previous stable version"
           terraform apply -auto-approve \
             -target=module.container_instances.azurerm_container_group.app \
             -var="frontend_image_tag=latest" \
