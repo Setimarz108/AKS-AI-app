@@ -53,6 +53,9 @@ jobs:
       
       - name: Verify images exist
         run: |
+          echo "Waiting for registry indexing..."
+          sleep 60 
+          
           echo "Verifying images were created..."
           az acr repository show-tags --name ${{ env.ACR_NAME }} --repository retailbot-api --output table
           az acr repository show-tags --name ${{ env.ACR_NAME }} --repository retailbot-frontend --output table
