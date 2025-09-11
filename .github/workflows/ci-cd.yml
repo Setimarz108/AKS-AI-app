@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 env:
   ACR_NAME: ${{ secrets.ACR_NAME }}
@@ -36,79 +35,51 @@ jobs:
               "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
             }
       
-      - name: Login to Azure Container Registry
-        run: az acr login --name ${{ env.ACR_NAME }}
-      
-      - name: Build and push backend image
+      - name: Build and push backend using ACR
         run: |
-          cd app
-          echo "Building backend image with tag: ${{ steps.tag.outputs.image_tag }}"
-          docker build -t ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:${{ steps.tag.outputs.image_tag }} . || exit 1
-          docker tag ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:${{ steps.tag.outputs.image_tag }} ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:latest || exit 1
-          
-          echo "Pushing backend images..."
-          docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:${{ steps.tag.outputs.image_tag }} || exit 1
-          docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:latest || exit 1
-          
-          echo "Verifying backend images were pushed..."
+          echo "Building backend with ACR build..."
+          az acr build --registry ${{ env.ACR_NAME }} \
+            --image retailbot-api:${{ steps.tag.outputs.image_tag }} \
+            --image retailbot-api:latest \
+            ./app
+      
+      - name: Build and push frontend using ACR
+        run: |
+          echo "Building frontend with ACR build..."
+          az acr build --registry ${{ env.ACR_NAME }} \
+            --image retailbot-frontend:${{ steps.tag.outputs.image_tag }} \
+            --image retailbot-frontend:latest \
+            ./app/frontend
+      
+      - name: Verify images exist
+        run: |
+          echo "Verifying images were created..."
           az acr repository show-tags --name ${{ env.ACR_NAME }} --repository retailbot-api --output table
-      
-      - name: Build and push frontend image
-        run: |
-          cd app/frontend
-          echo "Building frontend image with tag: ${{ steps.tag.outputs.image_tag }}"
-          echo "Current directory: $(pwd)"
-          echo "Directory contents:"
-          ls -la
-          
-          # Build with verbose output
-          docker build --progress=plain -t ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.tag.outputs.image_tag }} . || {
-            echo "Frontend build failed!"
-            exit 1
-          }
-          
-          docker tag ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.tag.outputs.image_tag }} ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:latest || {
-            echo "Frontend tagging failed!"
-            exit 1
-          }
-          
-          echo "Frontend images created locally:"
-          docker images | grep retailbot-frontend
-          
-          echo "Re-authenticating to ACR..."
-          az acr login --name ${{ env.ACR_NAME }} || {
-            echo "ACR login failed!"
-            exit 1
-          }
-          
-          echo "Pushing frontend images..."
-          docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ steps.tag.outputs.image_tag }} || {
-            echo "Frontend SHA push failed!"
-            exit 1
-          }
-          docker push ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:latest || {
-            echo "Frontend latest push failed!"
-            exit 1
-          }
-          
-          echo "Verifying frontend images were pushed..."
           az acr repository show-tags --name ${{ env.ACR_NAME }} --repository retailbot-frontend --output table
+          
+          # Verify specific tags exist
+          if ! az acr repository show-tags --name ${{ env.ACR_NAME }} --repository retailbot-api --query "contains(@, '${{ steps.tag.outputs.image_tag }}')" -o tsv | grep -q true; then
+            echo "ERROR: Backend image not found"
+            exit 1
+          fi
+          
+          if ! az acr repository show-tags --name ${{ env.ACR_NAME }} --repository retailbot-frontend --query "contains(@, '${{ steps.tag.outputs.image_tag }}')" -o tsv | grep -q true; then
+            echo "ERROR: Frontend image not found"
+            exit 1
+          fi
+          
+          echo "SUCCESS: All images verified"
       
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.6.0
       
-      - name: Terraform Init
-        run: |
-          cd terraform
-          export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
-          terraform init
-      
       - name: Deploy with Terraform
         run: |
           cd terraform
           export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
+          terraform init
           terraform apply -auto-approve \
             -target=module.container_instances.azurerm_container_group.app \
             -var="frontend_image_tag=${{ steps.tag.outputs.image_tag }}" \
@@ -152,16 +123,11 @@ jobs:
         with:
           terraform_version: 1.6.0
       
-      - name: Terraform Init
-        run: |
-          cd terraform
-          export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
-          terraform init
-      
       - name: Rollback to latest stable
         run: |
           cd terraform
           export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
+          terraform init
           echo "Rolling back to latest stable version"
           terraform apply -auto-approve \
             -target=module.container_instances.azurerm_container_group.app \
