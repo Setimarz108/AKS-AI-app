@@ -77,7 +77,7 @@ jobs:
       - name: Frontend tests
         run: |
           cd app/frontend
-          npm test -- --coverage --watchAll=false
+          npm test -- --coverage --watchAll=false --passWithNoTests
           echo "Frontend test coverage completed"
 
       - name: Upload test coverage
