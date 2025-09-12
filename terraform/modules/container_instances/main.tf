@@ -64,6 +64,8 @@ resource "azurerm_container_group" "app" {
     environment_variables = {
       ENVIRONMENT = var.environment
       LOG_LEVEL   = var.log_level
+      DATABASE_URL = "postgresql://${var.database_username}:${var.database_password}@${var.database_server_fqdn}:5432/${var.database_name}?sslmode=require"
+      
     }
 
     secure_environment_variables = {

@@ -71,3 +71,27 @@ variable "backend_image_tag" {
   description = "Backend image tag to deploy (e.g., v1.0.0)"
   type        = string
 }
+variable "database_name" {
+  description = "Database name"
+  type        = string
+  default     = ""
+}
+
+variable "database_username" {
+  description = "Database username"
+  type        = string
+  default     = ""
+}
+
+variable "database_password" {
+  description = "Database password"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "database_server_fqdn" {
+  description = "Database server FQDN"
+  type        = string
+  default     = ""
+}

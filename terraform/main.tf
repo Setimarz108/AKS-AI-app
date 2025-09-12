@@ -73,23 +73,23 @@ module "keyvault" {
 }
 
 # Database module for persistent data storage
-# module "database" {
-#   source = "./modules/database"
+module "database" {
+  source = "./modules/database"
   
-#   project_name        = local.project_name
-#   environment         = local.environment
-#   location            = azurerm_resource_group.main.location
-#   resource_group_name = azurerm_resource_group.main.name
+  project_name        = local.project_name
+  environment         = local.environment
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
   
-#   delegated_subnet_id = module.networking.database_subnet_id
-#   private_dns_zone_id = module.networking.private_dns_zone_id
+  delegated_subnet_id = module.networking.database_subnet_id
+  private_dns_zone_id = module.networking.private_dns_zone_id
   
-#   admin_username         = "retailbotadmin"
-#   database_name         = "retailbot"
-#   backup_retention_days = 7
+  admin_username         = "retailbotadmin"
+  database_name         = "retailbot"
+  backup_retention_days = 7
   
-#   tags = local.common_tags
-# }
+  tags = local.common_tags
+}
 
 # Container Instances module
 module "container_instances" {
