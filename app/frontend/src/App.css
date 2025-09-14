@@ -91,7 +91,7 @@ body {
   margin-bottom: 1rem;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
   min-height: 200px;
-  max-height: calc(100vh - 280px);
+  height: 400px;
 }
 
 .message {
@@ -340,7 +340,7 @@ body {
   }
   
   .messages-container {
-    max-height: calc(100vh - 240px);
+    height: 300px;
   }
 }
 
@@ -351,7 +351,7 @@ body {
   
   .messages-container {
     padding: 0.5rem;
-    max-height: calc(100vh - 220px);
+    height: 250px;
   }
   
   .input-form {
