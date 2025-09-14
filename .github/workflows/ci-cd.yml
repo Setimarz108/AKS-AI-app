@@ -260,16 +260,20 @@ jobs:
           terraform init
           terraform apply -auto-approve \
             -target=module.container_instances.azurerm_container_group.app \
-            -var="frontend_image_tag=${{ needs.build-images.outputs.image_tag }}" \
-            -var="backend_image_tag=${{ needs.build-images.outputs.image_tag }}"
+            -var="frontend_image_tag=latest" \
+            -var="backend_image_tag=latest"
           
           APP_URL=$(terraform output -raw frontend_url)
           echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
+          
+          # Force container restart to pull latest images
+          echo "Forcing container restart to ensure latest images are used..."
+          az container restart --resource-group rg-retailbot-demo --name ci-retailbot-app-demo
       
       - name: Health check deployment
         run: |
-          echo "Waiting for containers to start..."
-          sleep 90
+          echo "Waiting for containers to restart and start..."
+          sleep 120
           
           APP_URL="${{ steps.deploy.outputs.app_url }}"
           
