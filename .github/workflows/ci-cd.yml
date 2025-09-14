@@ -260,8 +260,8 @@ jobs:
           terraform init
           terraform apply -auto-approve \
             -target=module.container_instances.azurerm_container_group.app \
-            -var="frontend_image_tag=latest" \
-            -var="backend_image_tag=latest"
+            -var="frontend_image_tag=${{ needs.build-images.outputs.image_tag }}" \
+            -var="backend_image_tag=${{ needs.build-images.outputs.image_tag }}"
           
           APP_URL=$(terraform output -raw frontend_url)
           echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
@@ -301,7 +301,7 @@ jobs:
 
       - name: Notify deployment success
         run: |
-          echo "🚀 Deployment completed successfully!"
+          echo "Deployment completed successfully!"
           echo "Frontend URL: ${{ steps.deploy.outputs.app_url }}"
           echo "Backend API: ${{ steps.deploy.outputs.app_url }}:8000"
 
@@ -336,7 +336,7 @@ jobs:
         run: |
           cd terraform
           terraform init
-          echo "⚠️ Rolling back to previous stable version due to deployment failure"
+          echo "Rolling back to previous stable version due to deployment failure"
           terraform apply -auto-approve \
             -target=module.container_instances.azurerm_container_group.app \
             -var="frontend_image_tag=latest" \
