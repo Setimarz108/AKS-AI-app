@@ -80,16 +80,30 @@ module "database" {
   environment         = local.environment
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
-  
-  delegated_subnet_id = module.networking.database_subnet_id
-  private_dns_zone_id = module.networking.private_dns_zone_id
-  
+ 
   admin_username         = "retailbotadmin"
   database_name         = "retailbot"
   backup_retention_days = 7
   
   tags = local.common_tags
 }
+
+# data "azurerm_postgresql_flexible_server" "existing" {
+#   name                = "psql-retailbot-demo-9zn0"
+#   resource_group_name = azurerm_resource_group.main.name
+# }
+
+# # Set a known database password in Key Vault
+# resource "azurerm_key_vault_secret" "database_password" {
+#   name         = "database-password"
+#   value        = "RetailBot2025!"
+#   key_vault_id = module.keyvault.key_vault_id
+# }
+
+# # Create the database connection string
+# locals {
+#   database_connection_string = "postgresql://retailbotadmin:RetailBot2025!@${data.azurerm_postgresql_flexible_server.existing.fqdn}:5432/retailbot?sslmode=require"
+# }
 
 # Container Instances module
 module "container_instances" {
@@ -106,6 +120,9 @@ module "container_instances" {
   frontend_image_tag = var.frontend_image_tag
   backend_image_tag  = var.backend_image_tag
   
+    # Add database connection details
+  #  database_url = module.database.connection_string 
+
   # Resource allocation
   backend_cpu     = "0.5"
   backend_memory  = "1.0"
@@ -115,5 +132,5 @@ module "container_instances" {
   
   tags = local.common_tags
   
-  depends_on = [module.keyvault]
+  depends_on = [module.keyvault,module.database]
 }

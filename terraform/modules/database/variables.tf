@@ -23,11 +23,13 @@ variable "resource_group_name" {
 variable "delegated_subnet_id" {
   description = "The ID of the subnet delegated for PostgreSQL"
   type        = string
+  default     = null
 }
 
 variable "private_dns_zone_id" {
   description = "The ID of the private DNS zone for PostgreSQL"
   type        = string
+  default     = null
 }
 
 variable "admin_username" {

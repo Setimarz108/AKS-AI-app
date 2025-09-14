@@ -64,8 +64,7 @@ resource "azurerm_container_group" "app" {
     environment_variables = {
       ENVIRONMENT = var.environment
       LOG_LEVEL   = var.log_level
-      DATABASE_URL = "postgresql://${var.database_username}:${var.database_password}@${var.database_server_fqdn}:5432/${var.database_name}?sslmode=require"
-      
+      # DATABASE_URL = var.database_url != "" ? var.database_url : null
     }
 
     secure_environment_variables = {
@@ -140,7 +139,7 @@ resource "azurerm_container_group" "app" {
 
   image_registry_credential {
     server   = azurerm_container_registry.main.login_server
-    username = azurerm_container_registry.main.admin_username
+    username = azurerm_container_registry.main.admin_username  
     password = azurerm_container_registry.main.admin_password
   }
 }

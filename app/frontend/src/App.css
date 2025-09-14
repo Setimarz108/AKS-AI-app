@@ -25,6 +25,7 @@ body {
   color: white;
   padding: 1rem 2rem;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  flex-shrink: 0; /* Prevent header from shrinking */
 }
 
 .header-content {
@@ -71,7 +72,7 @@ body {
   font-weight: 500;
 }
 
-/* Chat Container */
+/* Chat Container - FIXED */
 .chat-container {
   flex: 1;
   display: flex;
@@ -80,8 +81,11 @@ body {
   margin: 0 auto;
   padding: 1rem;
   width: 100%;
+  min-height: 0; /* Critical for proper flex scrolling */
+  height: calc(100vh - 160px); /* Constrain total height */
 }
 
+/* Messages Container - FIXED */
 .messages-container {
   flex: 1;
   overflow-y: auto;
@@ -90,6 +94,8 @@ body {
   border-radius: 15px;
   margin-bottom: 1rem;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  min-height: 0; /* Critical for proper scrolling in flex containers */
+  max-height: none; /* Let flex handle the height */
 }
 
 /* Messages */
@@ -124,12 +130,16 @@ body {
   flex-direction: column;
 }
 
+/* Message Text - IMPROVED */
 .message-text {
   padding: 1rem 1.25rem;
   border-radius: 20px;
   font-size: 0.95rem;
   line-height: 1.4;
   word-wrap: break-word;
+  overflow-wrap: break-word; /* Better word breaking */
+  hyphens: auto; /* Allow hyphenation for very long words */
+  max-width: 100%; /* Prevent container overflow */
 }
 
 .message.user .message-text {
@@ -213,12 +223,13 @@ body {
   }
 }
 
-/* Input Form */
+/* Input Form - FIXED */
 .input-form {
   background: rgba(255, 255, 255, 0.9);
   border-radius: 15px;
   padding: 1rem;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  flex-shrink: 0; /* Prevent input from shrinking */
 }
 
 .input-container {
@@ -272,34 +283,43 @@ body {
   box-shadow: none;
 }
 
-/* Footer */
+/* Footer - FIXED */
 .app-footer {
   text-align: center;
   padding: 0.75rem;
   color: #6c757d;
   font-size: 0.8rem;
   background: rgba(255, 255, 255, 0.5);
+  flex-shrink: 0; /* Prevent footer from shrinking */
 }
 
-/* Scrollbar styling */
+/* Scrollbar styling - IMPROVED */
 .messages-container::-webkit-scrollbar {
-  width: 6px;
+  width: 8px; /* Slightly wider for better usability */
 }
 
 .messages-container::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
 }
 
 .messages-container::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.2);
-  border-radius: 3px;
+  border-radius: 4px;
+  transition: background 0.3s ease;
 }
 
 .messages-container::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.4);
 }
 
-/* Responsive design */
+/* Firefox scrollbar */
+.messages-container {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) rgba(0, 0, 0, 0.05);
+}
+
+/* Responsive design - IMPROVED */
 @media (max-width: 768px) {
   .app-header {
     padding: 1rem;
@@ -313,6 +333,7 @@ body {
   
   .chat-container {
     padding: 0.5rem;
+    height: calc(100vh - 140px); /* Adjusted for mobile */
   }
   
   .message-content {
@@ -324,10 +345,29 @@ body {
   }
   
   .input-container {
-    flex-direction: column;
+    gap: 0.5rem;
   }
   
-  .message-input, .send-button {
-    width: 100%;
+  .send-button {
+    min-width: 60px;
+    padding: 0.875rem 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .chat-container {
+    padding: 0.25rem;
+  }
+  
+  .messages-container {
+    padding: 0.5rem;
+  }
+  
+  .input-form {
+    padding: 0.75rem;
+  }
+  
+  .message-content {
+    max-width: 90%;
   }
 }

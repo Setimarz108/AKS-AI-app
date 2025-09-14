@@ -21,19 +21,14 @@ output "backend_url" {
   value       = module.container_instances.backend_url
 }
 
-output "database_server_fqdn" {
-  description = "Database server FQDN"
-  value       = module.database.server_fqdn
-  sensitive   = true
-}
+# output "database_server_fqdn" {
+#   description = "Database server FQDN"
+#   value       = module.database.server_fqdn 
+#   sensitive   = true
+# }
 
-output "database_name" {
-  description = "Database name"
-  value       = module.database.database_name
-}
+# output "database_name" {
+#   description = "Database name"
+#   value       = module.database.database_name
+# }
 
-# Remove these old outputs entirely:
-# - backend_fqdn
-# - frontend_fqdn  
-# - backend_ip_address
-# - frontend_ip_address

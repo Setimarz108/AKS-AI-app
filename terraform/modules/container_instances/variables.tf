@@ -95,3 +95,9 @@ variable "database_server_fqdn" {
   type        = string
   default     = ""
 }
+variable "database_url" {
+  description = "Database connection string"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
