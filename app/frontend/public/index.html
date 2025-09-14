@@ -1,4 +1,26 @@
 <!DOCTYPE html>
+ <head>
+    <meta charset="utf-8" />
+    <!-- your existing meta tags -->
+    
+    <!-- EMERGENCY CSS FIX FOR PRESENTATION -->
+    <style>
+      .messages-container {
+        height: 400px !important;
+        overflow-y: auto !important;
+        flex: 1 1 auto !important;
+      }
+      @media (max-width: 768px) {
+        .messages-container {
+          height: 300px !important;
+        }
+      }
+      @media (max-width: 480px) {
+        .messages-container {
+          height: 250px !important;
+        }
+      }
+    </style>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -16,21 +38,3 @@
     <div id="root"></div>
   </body>
 </html>
-
-<style>
-.messages-container {
-  height: 400px !important;
-  overflow-y: auto !important;
-  flex: 1 1 auto !important;
-}
-@media (max-width: 768px) {
-  .messages-container {
-    height: 300px !important;
-  }
-}
-@media (max-width: 480px) {
-  .messages-container {
-    height: 250px !important;
-  }
-}
-</style>
