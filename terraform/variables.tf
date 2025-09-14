@@ -42,3 +42,20 @@ variable "backend_image_tag" {
   type        = string
   default     = "latest"
 }
+variable "image_version" {
+  description = "Version tag for the deployment"
+  type        = string
+  default     = "latest"
+}
+
+variable "deployment_strategy" {
+  description = "Deployment strategy (rolling_update, blue_green)"
+  type        = string
+  default     = "rolling_update"
+}
+
+variable "environment" {
+  description = "Environment name (staging, production)"
+  type        = string
+  default     = "staging"
+}
