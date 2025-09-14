@@ -54,8 +54,3 @@ variable "deployment_strategy" {
   default     = "rolling_update"
 }
 
-variable "environment" {
-  description = "Environment name (staging, production)"
-  type        = string
-  default     = "staging"
-}
