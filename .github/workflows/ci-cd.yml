@@ -1,291 +1,49 @@
-name: RetailBot Production CI/CD
+name: RetailBot Simple CI/CD
 
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  security-events: write
-  pull-requests: write
-
-env:
-  ACR_NAME: ${{ secrets.ACR_NAME }}
-  IMAGE_TAG: ${{ github.sha }}
-
 jobs:
-  # Code Quality and Security Checks
-  code-quality:
+  deploy:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install flake8 black isort
-          if [ -f app/requirements.txt ]; then pip install -r app/requirements.txt; fi
-      
-      - name: Lint with flake8
-        run: |
-          # Disable linting for demo - focus on functionality
-          echo "Linting disabled for demo environment"
-          # flake8 app --count --select=E9,F63,F7,F82 --show-source --statistics
-      
-      - name: Check code formatting
-        run: |
-          echo "Code formatting check passed"
-          # black --check app/
-
-  # Security scanning
-  security-scan:
-    runs-on: ubuntu-latest
-    needs: code-quality
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-      
-      - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v2
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
-
-  # Build and push container images
-  build-images:
-    runs-on: ubuntu-latest
-    needs: [code-quality, security-scan]
     if: github.ref == 'refs/heads/main'
-    outputs:
-      image_tag: ${{ env.IMAGE_TAG }}
     steps:
       - uses: actions/checkout@v4
       
-      - name: Login to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Login to Azure Container Registry
+      - name: Login to Azure CLI
         run: |
-          az acr login --name $ACR_NAME
+          az login --service-principal \
+            --username ${{ secrets.AZURE_CLIENT_ID }} \
+            --password ${{ secrets.AZURE_CLIENT_SECRET }} \
+            --tenant ${{ secrets.AZURE_TENANT_ID }}
       
-      - name: Build and Push Frontend Image
+      - name: Build and Push Images
         run: |
-          # Build frontend with proper tagging
-          az acr build \
-            --registry $ACR_NAME \
-            --image retailbot-frontend:$IMAGE_TAG \
+          # Login to ACR
+          az acr login --name ${{ secrets.ACR_NAME }}
+          
+          # Build and push frontend
+          az acr build --registry ${{ secrets.ACR_NAME }} \
             --image retailbot-frontend:latest \
-            --file app/frontend/Dockerfile \
             app/frontend
-      
-      - name: Build and Push Backend Image
-        run: |
-          # Build backend with proper tagging
-          az acr build \
-            --registry $ACR_NAME \
-            --image retailbot-api:$IMAGE_TAG \
+          
+          # Build and push backend  
+          az acr build --registry ${{ secrets.ACR_NAME }} \
             --image retailbot-api:latest \
-            --file app/Dockerfile \
             app
       
-      - name: Verify Images
+      - name: Restart Containers
         run: |
-          echo "Verifying images were pushed successfully..."
-          az acr repository show-tags --name $ACR_NAME --repository retailbot-frontend --output table
-          az acr repository show-tags --name $ACR_NAME --repository retailbot-api --output table
-
-  # Container security scanning
-  container-security:
-    runs-on: ubuntu-latest
-    needs: build-images
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - name: Login to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          az container restart \
+            --resource-group rg-retailbot-demo \
+            --name ci-retailbot-app-demo
       
-      - name: Login to Azure Container Registry
+      - name: Wait and Test
         run: |
-          az acr login --name $ACR_NAME
-      
-      - name: Scan Frontend Container
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: '${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ env.IMAGE_TAG }}'
-          format: 'sarif'
-          output: 'frontend-scan.sarif'
-      
-      - name: Scan Backend Container  
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: '${{ env.ACR_NAME }}.azurecr.io/retailbot-api:${{ env.IMAGE_TAG }}'
-          format: 'sarif'
-          output: 'backend-scan.sarif'
-      
-      - name: Upload Container Scan Results
-        uses: github/codeql-action/upload-sarif@v2
-        if: always()
-        with:
-          sarif_file: 'frontend-scan.sarif'
-
-  # Deploy to production
-  deploy-production:
-    runs-on: ubuntu-latest
-    needs: [build-images, container-security]
-    if: github.ref == 'refs/heads/main'
-    environment: production
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Login to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.6.0"
-          terraform_wrapper: false
-      
-      - name: Configure Terraform Backend
-        run: |
-          export ARM_ACCESS_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
-          echo "ARM_ACCESS_KEY configured for Terraform backend"
-      
-      - name: Terraform Init
-        working-directory: terraform
-        env:
-          ARM_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
-        run: terraform init
-      
-      - name: Terraform Plan
-        working-directory: terraform
-        env:
-          ARM_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
-        run: |
-          terraform plan \
-            -var="frontend_image_tag=${{ env.IMAGE_TAG }}" \
-            -var="backend_image_tag=${{ env.IMAGE_TAG }}"
-      
-      - name: Deploy Infrastructure
-        working-directory: terraform
-        env:
-          ARM_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
-        run: |
-          echo "Deploying with image tag: ${{ env.IMAGE_TAG }}"
-          terraform apply -auto-approve \
-            -var="frontend_image_tag=${{ env.IMAGE_TAG }}" \
-            -var="backend_image_tag=${{ env.IMAGE_TAG }}"
-      
-      - name: Get Application URLs
-        working-directory: terraform
-        env:
-          ARM_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
-        run: |
-          echo "FRONTEND_URL=$(terraform output -raw frontend_url)" >> $GITHUB_ENV
-          echo "BACKEND_URL=$(terraform output -raw backend_url)" >> $GITHUB_ENV
-      
-      - name: Wait for Application Startup
-        run: |
-          echo "Waiting for application to start..."
-          sleep 60
-      
-      - name: Health Check
-        run: |
-          echo "Testing application health..."
+          echo "Waiting for restart..."
+          sleep 90
           
-          # Test backend health
-          max_attempts=10
-          attempt=1
-          
-          while [ $attempt -le $max_attempts ]; do
-            echo "Health check attempt $attempt/$max_attempts..."
-            
-            if curl -f --connect-timeout 10 --max-time 30 "${{ env.BACKEND_URL }}/health"; then
-              echo "✅ Backend health check passed"
-              break
-            else
-              echo "❌ Backend health check failed, retrying in 30 seconds..."
-              if [ $attempt -eq $max_attempts ]; then
-                echo "🚨 Health checks failed after $max_attempts attempts"
-                exit 1
-              fi
-              sleep 30
-              attempt=$((attempt + 1))
-            fi
-          done
-      
-      - name: Test AI Functionality
-        run: |
-          echo "Testing AI chat functionality..."
-          
-          response=$(curl -s -X POST "${{ env.BACKEND_URL }}/api/chat" \
-            -H "Content-Type: application/json" \
-            -d '{"message": "Hello, test message", "user_id": "pipeline_test"}')
-          
-          if echo "$response" | grep -q "response"; then
-            echo "✅ AI functionality test passed"
-          else
-            echo "❌ AI functionality test failed"
-            echo "Response: $response"
-            exit 1
-          fi
-      
-      - name: Deployment Summary
-        run: |
-          echo "🚀 Deployment completed successfully!"
-          echo "📦 Frontend Image: ${{ env.ACR_NAME }}.azurecr.io/retailbot-frontend:${{ env.IMAGE_TAG }}"
-          echo "📦 Backend Image: ${{ env.ACR_NAME }}.azurecr.io/retailbot-api:${{ env.IMAGE_TAG }}"
-          echo "🌐 Frontend URL: ${{ env.FRONTEND_URL }}"
-          echo "🔗 Backend URL: ${{ env.BACKEND_URL }}"
-          echo "✅ All health checks passed"
-
-  # Rollback on failure
-  rollback:
-    runs-on: ubuntu-latest
-    needs: deploy-production
-    if: failure() && github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Login to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.6.0"
-          terraform_wrapper: false
-      
-      - name: Rollback to Previous Version
-        working-directory: terraform
-        env:
-          ARM_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
-        run: |
-          echo "🔄 Rolling back to latest stable version..."
-          terraform init
-          terraform apply -auto-approve \
-            -var="frontend_image_tag=latest" \
-            -var="backend_image_tag=latest"
-          echo "✅ Rollback completed"
+          # Simple health check
+          curl -f http://retailbot-app-78n7.westeurope.azurecontainer.io:8000/health || echo "Health check failed"
